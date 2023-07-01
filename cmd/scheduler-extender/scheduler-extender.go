@@ -2,11 +2,11 @@ package main
 
 import (
 	"flag"
-	"log"
 	"time"
 
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/klog/v2"
 
 	"github.com/houwenchen/kube-scheduler-extender/pkg/controller"
 	"github.com/houwenchen/kube-scheduler-extender/pkg/utils/signals"
@@ -29,12 +29,12 @@ func main() {
 
 	clientConfig, err := util.BuildKubeConfig(*kubeconfig)
 	if err != nil {
-		log.Fatal("build kubeconfig failed")
+		klog.Fatal("build kubeconfig failed")
 	}
 
 	clientSet, err := kubernetes.NewForConfig(clientConfig)
 	if err != nil {
-		log.Fatal("build clientSet failed")
+		klog.Fatal("build clientSet failed")
 	}
 
 	sharedInformerFactory := informers.NewSharedInformerFactory(clientSet, syncPeriod)
@@ -46,8 +46,8 @@ func main() {
 
 	controller, err := controller.NewController(clientSet, podInformer, nodeInformer)
 	if err != nil {
-		log.Fatal("build controller failed")
+		klog.Fatal("build controller failed")
 	}
 
-	controller.Run()
+	controller.Run(ctx)
 }
