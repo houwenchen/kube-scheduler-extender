@@ -11,7 +11,15 @@ import (
 )
 
 type Filter struct {
+	Name    string
 	storage *storage.Storage
+}
+
+func NewFilter(storage *storage.Storage) *Filter {
+	return &Filter{
+		Name:    types.FilterName,
+		storage: storage,
+	}
 }
 
 func (f *Filter) Handler(args extenderv1.ExtenderArgs) *extenderv1.ExtenderFilterResult {
