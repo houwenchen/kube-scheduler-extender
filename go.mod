@@ -3,6 +3,7 @@ module github.com/houwenchen/kube-scheduler-extender
 go 1.19
 
 require (
+	github.com/julienschmidt/httprouter v1.3.0
 	k8s.io/api v0.27.3
 	k8s.io/apimachinery v0.27.3
 	k8s.io/client-go v0.27.3
