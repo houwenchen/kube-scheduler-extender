@@ -7,6 +7,7 @@ require (
 	k8s.io/apimachinery v0.27.3
 	k8s.io/client-go v0.27.3
 	k8s.io/klog/v2 v2.90.1
+	k8s.io/kube-scheduler v0.27.3
 )
 
 require (

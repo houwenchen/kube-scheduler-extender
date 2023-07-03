@@ -5,6 +5,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreinformer "k8s.io/client-go/informers/core/v1"
@@ -13,14 +14,13 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
+
+	"github.com/houwenchen/kube-scheduler-extender/pkg/storage"
+	"github.com/houwenchen/kube-scheduler-extender/pkg/utils/types"
 )
 
 const (
 	maxReQueue = 10
-)
-
-var (
-	KeyFunc = cache.DeletionHandlingMetaNamespaceKeyFunc
 )
 
 type Controller struct {
@@ -33,12 +33,15 @@ type Controller struct {
 	nodeInformerSynced cache.InformerSynced
 
 	queue workqueue.RateLimitingInterface
+
+	storage *storage.Storage
 }
 
 func NewController(client kubernetes.Interface, podInformer coreinformer.PodInformer, nodeInformer coreinformer.NodeInformer) (*Controller, error) {
 	c := &Controller{
-		client: client,
-		queue:  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "scheduler controller"),
+		client:  client,
+		queue:   workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "scheduler controller"),
+		storage: storage.NewStorage(),
 	}
 
 	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -148,5 +151,46 @@ func (c *Controller) handleErr(item interface{}, err error) {
 }
 
 func (c *Controller) syncPod(key string) error {
+	fullKey, err := types.KeyFunc(key)
+	if err != nil {
+		return err
+	}
+
+	ns, name, err := cache.SplitMetaNamespaceKey(fullKey)
+	if err != nil {
+		klog.InfoS("split key to namespace and name failed: %s", key)
+		return err
+	}
+
+	startTime := time.Now()
+	klog.Infof("start syncing pod: %s, start time: %v", name, startTime)
+	defer func() {
+		klog.Infof("finish syncing pod: %s, duration time: %v", name, time.Since(startTime))
+	}()
+
+	pod, err := c.podLister.Pods(ns).Get(name)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			klog.InfoS("pod is deleted: %s", name)
+			return nil
+		}
+		klog.InfoS("get pod failed: %s", name)
+		return err
+	}
+
+	nodeName, exist := pod.Annotations["nodeName"]
+	if !exist {
+		if err := c.storage.DeletePodOfStorage(fullKey); err != nil {
+			return err
+		}
+
+		klog.InfoS("this pod needn't been synced: %s", name)
+		return nil
+	}
+
+	if err := c.storage.AddPodOfStorage(fullKey, nodeName); err != nil {
+		return err
+	}
+
 	return nil
 }
