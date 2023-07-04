@@ -43,3 +43,15 @@ func (s *Storage) GetPodOfStorage(key string) (string, bool) {
 
 	return nodeName, exist
 }
+
+func (s *Storage) GetPodsOfStorage() []string {
+	s.m.RLock()
+	defer s.m.RUnlock()
+
+	pods := make([]string, 0)
+	for pod := range s.storage {
+		pods = append(pods, pod)
+	}
+
+	return pods
+}

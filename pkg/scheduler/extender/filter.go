@@ -1,9 +1,10 @@
-package scheduler
+package extender
 
 import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 	extenderv1 "k8s.io/kube-scheduler/extender/v1"
 
 	"github.com/houwenchen/kube-scheduler-extender/pkg/storage"
@@ -39,6 +40,9 @@ func (f *Filter) Handler(args extenderv1.ExtenderArgs) *extenderv1.ExtenderFilte
 	// pod annotations 中存在 nodeName 的处理逻辑：
 	nodeName, exist := f.storage.GetPodOfStorage(fulleKey)
 	if exist {
+		klog.Infof("%s can be filtered", fulleKey)
+		klog.Infof("will check node exists: %s", nodeName)
+
 		if args.NodeNames != nil {
 			for _, v := range *args.NodeNames {
 				if v == nodeName {
