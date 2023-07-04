@@ -165,6 +165,10 @@ func (c *Controller) handleErr(item interface{}, err error) {
 }
 
 func (c *Controller) syncPod(key string) error {
+	if err := c.Storage.DeletePodOfStorage(key); err != nil {
+		return err
+	}
+
 	ns, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		klog.Infof("split key to namespace and name failed: %s", key)
