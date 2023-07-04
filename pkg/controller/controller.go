@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -34,14 +35,14 @@ type Controller struct {
 
 	queue workqueue.RateLimitingInterface
 
-	storage *storage.Storage
+	Storage *storage.Storage
 }
 
 func NewController(client kubernetes.Interface, podInformer coreinformer.PodInformer, nodeInformer coreinformer.NodeInformer) (*Controller, error) {
 	c := &Controller{
 		client:  client,
 		queue:   workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "scheduler controller"),
-		storage: storage.NewStorage(),
+		Storage: storage.NewStorage(),
 	}
 
 	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -61,6 +62,8 @@ func NewController(client kubernetes.Interface, podInformer coreinformer.PodInfo
 func (c *Controller) Run(ctx context.Context) {
 	defer runtime.HandleCrash()
 	defer c.queue.ShutDown()
+
+	klog.Info("controller start")
 
 	if !cache.WaitForCacheSync(ctx.Done(), c.podInformerSynced) {
 		klog.Fatalf("podInformer isn't synced")
@@ -101,40 +104,51 @@ func (c *Controller) processNextItem() bool {
 func (c *Controller) addPod(obj interface{}) {
 	pod, ok := obj.(*corev1.Pod)
 	if !ok {
-		klog.InfoS("can't convert %v to *v1.Pod", obj)
+		klog.Infof("can't convert %v to *v1.Pod", obj)
 		return
 	}
 
-	klog.InfoS("start add pod to queue: %s", pod.Name)
-	c.queue.Add(pod)
+	klog.Infof("start add pod to queue: %s", pod.Name)
+	c.enqueue(pod)
 }
 
 func (c *Controller) updatePod(oldObj interface{}, newObj interface{}) {
 	oldPod, ok := oldObj.(*corev1.Pod)
 	if !ok {
-		klog.InfoS("can't convert %v to *v1.Pod", oldObj)
+		klog.Infof("can't convert %v to *v1.Pod", oldObj)
 		return
 	}
 
 	curPod, ok := newObj.(*corev1.Pod)
 	if !ok {
-		klog.InfoS("can't convert %v to *v1.Pod", newObj)
+		klog.Infof("can't convert %v to *v1.Pod", newObj)
 		return
 	}
 
-	klog.InfoS("start update pod to queue: %s", oldPod.Name)
-	c.queue.Add(curPod)
+	klog.Infof("start update pod to queue: %s", oldPod.Name)
+	c.enqueue(curPod)
 }
 
 func (c *Controller) deletePod(obj interface{}) {
 	pod, ok := obj.(*corev1.Pod)
 	if !ok {
-		klog.InfoS("can't convert %v to *v1.Pod", obj)
+		klog.Infof("can't convert %v to *v1.Pod", obj)
 		return
 	}
 
-	klog.InfoS("start delete pod to queue: %s", pod.Name)
-	c.queue.Add(pod)
+	klog.Infof("start delete pod to queue: %s", pod.Name)
+	c.enqueue(pod)
+}
+
+func (c *Controller) enqueue(pod *corev1.Pod) {
+	key, err := types.KeyFunc(pod)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", pod, err))
+		return
+	}
+
+	klog.Infof("add %s to queue", key)
+	c.queue.Add(key)
 }
 
 func (c *Controller) handleErr(item interface{}, err error) {
@@ -151,14 +165,9 @@ func (c *Controller) handleErr(item interface{}, err error) {
 }
 
 func (c *Controller) syncPod(key string) error {
-	fullKey, err := types.KeyFunc(key)
+	ns, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		return err
-	}
-
-	ns, name, err := cache.SplitMetaNamespaceKey(fullKey)
-	if err != nil {
-		klog.InfoS("split key to namespace and name failed: %s", key)
+		klog.Infof("split key to namespace and name failed: %s", key)
 		return err
 	}
 
@@ -171,26 +180,29 @@ func (c *Controller) syncPod(key string) error {
 	pod, err := c.podLister.Pods(ns).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			klog.InfoS("pod is deleted: %s", name)
+			klog.Infof("pod is deleted: %s", name)
 			return nil
 		}
-		klog.InfoS("get pod failed: %s", name)
+		klog.Infof("get pod failed: %s", name)
 		return err
 	}
 
 	nodeName, exist := pod.Annotations["nodeName"]
 	if !exist {
-		if err := c.storage.DeletePodOfStorage(fullKey); err != nil {
+		if err := c.Storage.DeletePodOfStorage(key); err != nil {
 			return err
 		}
 
-		klog.InfoS("this pod needn't been synced: %s", name)
+		klog.Infof("this pod needn't been synced: %s", name)
 		return nil
 	}
 
-	if err := c.storage.AddPodOfStorage(fullKey, nodeName); err != nil {
+	if err := c.Storage.AddPodOfStorage(key, nodeName); err != nil {
 		return err
 	}
+
+	pods := c.Storage.GetPodsOfStorage()
+	klog.Infof("storage info: %v", pods)
 
 	return nil
 }

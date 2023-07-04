@@ -12,9 +12,7 @@ var (
 	shutdownSignals      = []os.Signal{os.Interrupt, syscall.SIGTERM}
 )
 
-// SetupSignalHandler registered for SIGTERM and SIGINT. A stop channel is returned
-// which is closed on one of these signals. If a second signal is caught, the program
-// is terminated with exit code 1.
+// 这里两个实现方法类似，及通过一个可以接收2个信号的channel来实现第一次调用ctx的cancel方法，一次调用os退出方法
 func SetupSignalHandler() (stopCh <-chan struct{}) {
 	close(onlyOneSignalHandler) // 确保此函数只会调用一次，因为关闭的 channel 不能再次关闭
 
